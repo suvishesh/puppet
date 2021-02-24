@@ -1,44 +1,52 @@
 ---
-- name: Install puppetagent
-  hosts: 172.31.39.43
+- name: install puppet master
+  hosts: 172.31.36.2
   remote_user: root
   vars:
-    - MASTER_IP: 172.31.36.2
+    - PUPPET_SYSCONFIG_PATH: /etc/sysconfig/puppetserver
+    - MASTER_IP:
 
   tasks:
-    - name: install rpm package
-      yum:
-         name: https://yum.puppetlabs.com/puppet-release-el-7.noarch.rpm
-         state: present
+  - name: install rpm package from puppet repo
+    yum:
+      name: https://yum.puppetlabs.com/puppet7-release-el-7.noarch.rpm
+      state: present
 
-    - name: install puppet-agent
-      yum:
-          name: puppet-agent
-          state: present
+  - name: install puppet
+    yum:
+      name: puppetserver
+      state: present
 
-    - name: get ip
-      shell: hostname -I
-      register: IP
+  - name: change the config
+    shell:  sed -i 's/Xms.g/Xms512m/g;s/Xmx.g/Xmx512m/g' {{ PUPPET_SYSCONFIG_PATH }}
 
-    - name: add host entry
-      blockinfile:
-        path: /etc/hosts
-        block: |
-               {{ IP.stdout }} agent.suvishesh.com
-               {{ MASTER_IP }} master.suvishesh.com
-        state: present
+  - name: get ip
+    shell: hostname -I
+    register: IP
 
-    - name: add puppet config
-      blockinfile:
-        path: /etc/puppetlabs/puppet/puppet.conf
-        block: |
-               [agent]
-               server = master.suvishesh.com
-        state: present
+  - name: add host entry
+    lineinfile:
+      path: /etc/hosts
+      line: "{{ IP.stdout }} master.suvishesh.com"
+      state: present
 
-    - name: start the service
-      command: sudo /opt/puppetlabs/bin/puppet resource service puppet ensure=running enable=true
+  - name: add puppet config
+    blockinfile:
+      path: /etc/puppetlabs/puppet/puppet.conf
+      block: |
+             [main]
+             dns_alt_names = master.suvishesh.com
+             certname = suvipuppetcert
+             server = master.suvishesh.com
+      state: present
 
-    - name: requesting the master to sign certificate
-      command: /opt/puppetlabs/bin/puppet agent -t
-      ignore_errors: yes
+  - name: genereate root and ca signing certifcate
+    command: sudo /opt/puppetlabs/bin/puppetserver ca setup
+    ignore_errors: yes
+
+  - name: start the service
+    service:
+      name: puppetserver
+      state: started
+      enabled: yes
+
